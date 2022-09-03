@@ -1,0 +1,5 @@
+jupyter notebook with analysis -> main.ipynb
+code for modeling (Python 3) -> model.py
+file with model predictions -> predictions.csv
+readme file - this one
+requirements.txt included
