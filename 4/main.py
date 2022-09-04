@@ -173,33 +173,67 @@ def display(display_list):
    plt.axis("off")
  plt.show()
 
+
+from keras.layers import *
+
+
 def unetmodel():
     inputs = layers.Input(shape=(128, 128, 3))
-    # encoder: contracting path - downsample
-    # 1 - downsample
-    f1, p1 = downsample_block(inputs, 64)
-    # 2 - downsample
-    f2, p2 = downsample_block(p1, 128)
-    # 3 - downsample
-    f3, p3 = downsample_block(p2, 256)
-    # 4 - downsample
-    f4, p4 = downsample_block(p3, 512)
-    # 5 - bottleneck
-    bottleneck = double_conv_block(p4, 1024)
-    # decoder: expanding path - upsample
-    # 6 - upsample
-    u6 = upsample_block(bottleneck, f4, 512)
-    # 7 - upsample
-    u7 = upsample_block(u6, f3, 256)
-    # 8 - upsample
-    u8 = upsample_block(u7, f2, 128)
-    # 9 - upsample
-    u9 = upsample_block(u8, f1, 64)
-    # outputs
-    outputs = layers.Conv2D(1, 1, padding="same", activation="sigmoid")(u9)
-    # unet model with Keras Functional API
-    unet_model = Model(inputs, outputs, name="U-Net")
-    return unet_model
+    s = Lambda(lambda x: x / 255)(inputs)
+
+    c1 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(s)
+    c1 = Dropout(0.1)(c1)
+    c1 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c1)
+    p1 = MaxPooling2D((2, 2))(c1)
+
+    c2 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(p1)
+    c2 = Dropout(0.1)(c2)
+    c2 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c2)
+    p2 = MaxPooling2D((2, 2))(c2)
+
+    c3 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(p2)
+    c3 = Dropout(0.2)(c3)
+    c3 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c3)
+    p3 = MaxPooling2D((2, 2))(c3)
+
+    c4 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(p3)
+    c4 = Dropout(0.2)(c4)
+    c4 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c4)
+    p4 = MaxPooling2D(pool_size=(2, 2))(c4)
+
+    c5 = Conv2D(256, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(p4)
+    c5 = Dropout(0.3)(c5)
+    c5 = Conv2D(256, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c5)
+
+    u6 = Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c5)
+    u6 = concatenate([u6, c4])
+    c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(u6)
+    c6 = Dropout(0.2)(c6)
+    c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c6)
+
+    u7 = Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(c6)
+    u7 = concatenate([u7, c3])
+    c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(u7)
+    c7 = Dropout(0.2)(c7)
+    c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c7)
+
+    u8 = Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(c7)
+    u8 = concatenate([u8, c2])
+    c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(u8)
+    c8 = Dropout(0.1)(c8)
+    c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c8)
+
+    u9 = Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c8)
+    u9 = concatenate([u9, c1], axis=3)
+    c9 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(u9)
+    c9 = Dropout(0.1)(c9)
+    c9 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same')(c9)
+
+    outputs = Conv2D(1, (1, 1), activation='sigmoid')(c9)
+
+    model = Model(inputs=[inputs], outputs=[outputs])
+
+    return model
 
 def pad_along_axis(array: np.ndarray, target_length: int, axis: int = 0) -> np.ndarray:
 
@@ -214,8 +248,8 @@ def pad_along_axis(array: np.ndarray, target_length: int, axis: int = 0) -> np.n
     return np.pad(array, pad_width=npad, mode='constant', constant_values=0)
 
 
+from scipy.ndimage.interpolation import rotate
 def createData(source, map):
-    grids = 4
     w = map.shape[0]
     stepw = 128  # int(w / grids)
     h = map.shape[1]
@@ -229,7 +263,7 @@ def createData(source, map):
     Y1 = np.expand_dims(Y, axis=3)
     X = []
     Y = []
-    empty_terrain_limit = len(X1)/1000
+    empty_terrain_limit = 0 #len(X1)/1000
     print(f"EMPTY TERRAINS {empty_terrain_limit}")
     for i in range(0, len(X1)):
         x = X1[i]
@@ -237,6 +271,10 @@ def createData(source, map):
         if np.count_nonzero(y) > 0:
             X.append(x)
             Y.append(y)
+            for angle in (90, 180, 270):
+                #augmentation
+                X.append(rotate(x, angle=angle))
+                Y.append(rotate(y, angle=angle))
         else:
             if empty_terrain_limit > 0:
                 empty_terrain_limit -= 1
@@ -244,7 +282,7 @@ def createData(source, map):
                 Y.append(y)
 
     print(f"DATA LEN {len(X)}")
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=41)
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.05, random_state=41)
     X_val, X_test, Y_val, Y_test = train_test_split(X_test, Y_test, random_state=42, test_size=0.5)
     return X_train, Y_train, X_test, Y_test, X_val, Y_val
 
@@ -278,39 +316,57 @@ preprocess_input = sm.get_preprocessing(BACKBONE)
 
 mapp = map
 
-# Press the green button in the gutter to run the script.
-def calculateError(preds, Y_test, loss):
-    print(f"SHAPE {Y_test[0].shape} {preds[0].shape}")
-    print(f"Y TEST: {Y_test[0]}")
-    preds = np.squeeze(preds)
-    print(f"PREDS: {preds[0]}")
-    r = loss(np.asarray(Y_test), np.asarray(preds))
-    print(f"LOSS {r}")
+def add_sample_weights(label):
+  # The weights for each class, with the constraint that:
+  #     sum(class_weights) == 1.0
+  class_weights = tensorflow.constant([100000000, 0])
+  class_weights = class_weights/tensorflow.reduce_sum(class_weights)
 
+  # Create an image of `sample_weights` by using the label at each pixel as an
+  # index into the `class weights` .
+  sample_weights = tensorflow.gather(class_weights, indices=tensorflow.cast(label, tensorflow.int32))
+
+  return sample_weights
 
 def nnprogram(X_train, Y_train, X_test, Y_test, X_val, Y_val):
     X = X_train
     Y = Y_train
     ROWS = X[0].shape[0]
     COLS = X[0].shape[1]
-    CLASSES = 1
     CHANNELS = X[0].shape[2]
-    print(X[0].shape)
-    print(f"Y SHAPE: {Y[0].shape}")
-    print(f"ROWS {ROWS} {COLS} {CHANNELS}")
-    model = unetmodel() #sm.Unet('resnet34', classes=CLASSES, activation='sigmoid', encoder_weights='imagenet')
-    #dice_loss = sm.losses.DiceLoss()
-    #focal_loss = sm.losses.BinaryFocalLoss()
-
+    model = unetmodel()
     nonzeroys = np.count_nonzero(Y_train)
-    sample_weight = np.ones(shape=(len(Y_train), 128, 128))
+    sample_weight = np.ones(shape=(len(Y_train), 128, 128, 1))
     cl1 = ((len(Y_train)*128**2-nonzeroys)/len(Y_train)*128**2)
     cl2 = (nonzeroys/len(Y_train)*128**2)
-    k = 1
-    sample_weight[Y_train == 1] = k*cl1/cl2
-    sample_weight[Y_train == 0] = 1
+    k = 600
+    for i, sample in enumerate(Y_train):
+        sample_weight[i] = sample_weight[i]+sample*k
 
-    total_loss = "binary_crossentropy",#dice_loss + (1 * focal_loss)
+    def jaccard_distance_loss(y_true, y_pred, smooth=100):
+        K = keras.backend
+        y_true = keras.backend.cast(y_true, "float32")
+        """
+        Jaccard = (|X & Y|)/ (|X|+ |Y| - |X & Y|)
+                = sum(|A*B|)/(sum(|A|)+sum(|B|)-sum(|A*B|))
+
+        The jaccard distance loss is usefull for unbalanced datasets. This has been
+        shifted so it converges on 0 and is smoothed to avoid exploding or disapearing
+        gradient.
+
+        Ref: https://en.wikipedia.org/wiki/Jaccard_index
+
+        @url: https://gist.github.com/wassname/f1452b748efcbeb4cb9b1d059dce6f96
+        @author: wassname
+        """
+        intersection = K.sum(K.sum(K.abs(y_true * y_pred), axis=-1))
+        sum_ = K.sum(K.sum(K.abs(y_true) + K.abs(y_pred), axis=-1))
+        jac = (intersection + smooth) / (sum_ - intersection + smooth)
+        return (1 - jac) * smooth
+
+    def iou_loss(y_true, y_pred):
+        return jaccard_distance_loss(y_true, y_pred)
+    total_loss = iou_loss
 
     model_checkpoint_callback = ModelCheckpoint(
         filepath=checkpoint_filepath,
@@ -319,7 +375,7 @@ def nnprogram(X_train, Y_train, X_test, Y_test, X_val, Y_val):
         mode='max',
         save_best_only=True)
 
-    optimizer = Adam(lr=0.01)
+    optimizer = Adam(lr=0.001)
 
     model.compile(
         optimizer=optimizer,
@@ -327,27 +383,26 @@ def nnprogram(X_train, Y_train, X_test, Y_test, X_val, Y_val):
         metrics=[keras.metrics.MeanIoU(num_classes=2)],
     )
 
-    x_train = X # preprocess_input(X)
-    x_val = X_val # preprocess_input(X_val)
-    x_test = X_test # preprocess_input(X_test)
-
-
+    x_train = X
+    x_val = X_val
+    x_test = X_test
 
     print(f"WEIGHTS: {k*(cl1/cl2)} {1}")
     model.fit(
-            x=array(x_train),
-            y=array(Y),
-            epochs=20,
-            batch_size=24,
-            validation_data=(array(x_val), array(Y_val)),
-            callbacks=[model_checkpoint_callback]
-        )
+        x=array(x_train),
+        y=array(Y),
+        epochs=4,
+        batch_size=12,
+        sample_weight=sample_weight,
+        validation_data=(array(x_val), array(Y_val)),
+        callbacks=[model_checkpoint_callback]
+    )
 
-    for i, t in enumerate(zip(x_test, Y_test)):
-        x, y = t
-        if np.count_nonzero(y) > 0 or np.count_nonzero(x) > 0:
-            pred = model.predict(array(np.expand_dims(x_test[i], axis=0)))
-            p = create_mask(pred)
+    pred = model.predict(array(x_test))
+    for i, t in enumerate(zip(x_test, Y_test, pred)):
+        x, y, p = t
+        if np.count_nonzero(y) > 0 or np.count_nonzero(p) > 0:
+            p = np.rint(p)
             display([x, y, p])
     return 0
 
